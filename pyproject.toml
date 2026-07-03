@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lexical-pipeline"
+version = "0.0.1"
+description = "Reusable iEEG preprocessing/analysis core for the Lexical paradigm family (NoDelay, Uniqueness Point, ...)."
+readme = "README.md"
+requires-python = ">=3.10"
+# NOTE: runtime deps are provided by the per-dataset conda env (e.g. `Lexical_NoDelay`),
+# which already ships numpy/pandas/scipy/scikit-learn/mne/mne-bids/h5py/tqdm/tensorly and
+# the CoganLab `ieeg` library. Listed here for documentation; install with
+# `pip install -e . --no-deps --no-build-isolation` to stay fully offline on the HPC.
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "mne",
+    "mne-bids",
+    "h5py",
+    "tqdm",
+    "tensorly",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"lexical_pipeline.data" = ["*.txt", "*.csv"]
