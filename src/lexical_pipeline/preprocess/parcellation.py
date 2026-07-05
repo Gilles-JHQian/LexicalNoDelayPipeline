@@ -19,6 +19,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def tkr_ras_to_voxel(tkr_ras_mm, image):
+    """Convert FreeSurfer surface RAS (tkRAS, mm) to continuous voxel IJK.
+
+    Uses the volume's own header transform ``inv(vox2ras_tkr)``, so it is exact
+    for any FreeSurfer volume geometry (no hardcoded conform constants). Returns
+    a length-3 float array of continuous voxel indices, in the volume's native
+    (i, j, k) axis order; round before indexing.
+    """
+    tkr_ras_mm = np.asarray(tkr_ras_mm, dtype=float)
+    if tkr_ras_mm.shape != (3,):
+        raise ValueError(
+            f"Expected one tkRAS coordinate with shape (3,), got {tkr_ras_mm.shape}"
+        )
+    homogeneous = np.r_[tkr_ras_mm, 1.0]
+    return (np.linalg.inv(image.header.get_vox2ras_tkr()) @ homogeneous)[:3]
+
+
 def main(
     bids_root: str = None,
     recon_dir: str = None,
@@ -169,40 +187,29 @@ def main(
         # ---------------------------------------------------------------------
         # 6. RAS (mm) -> Atlas voxel indices (i, j, k)
         # ---------------------------------------------------------------------
-        # The electrodes.tsv coordinates are in RAS (Right-Anterior-Superior)
-        # in millimeters, in the same space as the validation CSVs. The
-        # original MATLAB code converts these to FreeSurfer tkr/PIALVOX
-        # coordinates and then to voxel indices using a series of axis swaps
-        # and flips.
+        # The electrodes.tsv coordinates are FreeSurfer surface RAS (tkRAS) in
+        # the same native space as the subject's aparc.a2009s+aseg volume.
+        # Convert them to voxel indices with the volume's own header transform,
+        # inv(vox2ras_tkr), rather than the hardcoded 128/128/126 constants the
+        # MATLAB pipeline was reverse-engineered into. The header transform is
+        # exact for any volume geometry; for the standard 256^3 1mm conform it
+        # reduces to i=128-x, j=128-z, k=128+y -- i.e. it also corrects the old
+        # k offset, which was 126 instead of 128 (a 2-voxel A-P shift).
         #
-        # Here we use the *combined* closed-form mapping that we derived by
-        # reverse-engineering the MATLAB pipeline and validating against the
-        # aparc.a2009s+aseg volume:
-        #   MATLAB indices (1-based):
-        #       mi = round(128 - ras[2])
-        #       mj = round(128 - ras[0])
-        #       mk = 126 + round(ras[1])
-        #   NumPy indexing (0-based, row-major):
-        #       atlas_data[mj, mi, mk]
-        #
-        # After considering MATLAB's column-major ordering vs NumPy's
-        # row-major ordering, we end up with the following direct formulas
-        # for NumPy indices (i, j, k):
+        # atlas_data is indexed [i, j, k], matching the (i, j, k) axis order the
+        # transform returns (i from x, j from z, k from y for the conform).
 
         # Adaptive unit conversion: if coordinates look like meters (|value|
-        # < 10), convert to mm. This is important because some BIDS inputs
-        # store positions in meters, while the atlas and MATLAB pipeline use
-        # millimeters.
+        # < 10), convert to mm. Some BIDS inputs store positions in meters,
+        # while the atlas and tkRAS transform use millimeters.
         if np.max(np.abs(ras)) < 10:
             ras = ras * 1000
-            
-        # RAS -> atlas voxel index. These constants (128, 126) and axis
-        # order mirror the MATLAB implementation and FreeSurfer tkr space.
-        i = int(np.round(128 - ras[0]))  # X -> first index (with flip)
-        j = int(np.round(128 - ras[2]))  # Z -> second index (with flip)
-        k = int(126 + np.round(ras[1]))  # Y -> third index (offset by 126)
-        
-        # Clip to atlas bounds
+
+        # RAS (mm) -> continuous voxel IJK via the FreeSurfer header, rounded
+        # to the nearest voxel.
+        i, j, k = np.rint(tkr_ras_to_voxel(ras, atlas_img)).astype(int)
+
+        # Clip to atlas bounds (guard against electrodes just outside the volume)
         i = int(np.clip(i, 0, atlas_data.shape[0] - 1))
         j = int(np.clip(j, 0, atlas_data.shape[1] - 1))
         k = int(np.clip(k, 0, atlas_data.shape[2] - 1))
