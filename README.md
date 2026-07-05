@@ -21,7 +21,7 @@ pip install -e /hpc/home/jq81/repos/LexicalNoDelayPipeline --no-deps --no-build-
 
 ```
 src/lexical_pipeline/
-  preprocess/    denoise / apply_muscle / save_bipolar_derivative / parcellation / epoching engine
+  preprocess/    denoise / apply_muscle / apply_eeg / save_bipolar_derivative / parcellation / epoching engine
   lexicon/       uniqueness-point (UP/DP) computation + landmark-aligned epoching
   stats/         permutation-cluster HGA machinery + result packaging
   decoding/      decoder / cross_decoder / parc_utils + decoding engines
