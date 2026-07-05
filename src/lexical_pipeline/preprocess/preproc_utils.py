@@ -122,20 +122,21 @@ def detect_outlier(subj: str, search_dir: str, task_tag: str) -> int:
     return 0
 
 
-def _mark_bad_channels(
+def update_muscle_chs(
     subj: str,
     search_dir: str,
     task_tag: str,
-    electrode_list: list,
-    description: str,
-) -> None:
-    """Mark ``electrode_list`` as ``bad/<description>`` in each clean channels.tsv.
+    muscle_dir: str,
+) -> list:
+    """Mark muscle channels as ``bad/muscle`` in each run's clean channels.tsv.
 
-    Shared machinery behind ``update_muscle_chs`` / ``update_eeg_chs``: for every
-    channel in ``electrode_list`` present in a run's clean channels.tsv, sets
-    ``status=bad, status_description=<description>``.  Idempotent (re-running does
-    not compound; a value already at ``bad/<description>`` is left untouched).
+    Reads the subject's muscle CSV from ``muscle_dir`` and, for every channel
+    listed, sets ``status=bad, status_description=muscle`` in every matching
+    clean channels.tsv under ``search_dir``.  Idempotent (re-running does not
+    compound).  Returns the list of muscle channels applied.
     """
+    electrode_list = load_muscle_chs(subj, muscle_dir)
+
     task_tag_clean = bids_task_tag(task_tag)
     pattern = (
         f"sub-{subj}_task-{task_tag_clean}_acq-.+?_run-.+?_desc-clean_channels.tsv"
@@ -155,55 +156,11 @@ def _mark_bad_channels(
                 idx = data[data["name"] == electrode].index[0]
                 if (
                     data.at[idx, "status"] != "bad"
-                    or data.at[idx, "status_description"] != description
+                    or data.at[idx, "status_description"] != "muscle"
                 ):
                     data.at[idx, "status"] = "bad"
-                    data.at[idx, "status_description"] = description
+                    data.at[idx, "status_description"] = "muscle"
         data.to_csv(file_path, sep="\t", index=False)
 
-    print(f"Updated {description} channels for subject {subj}: {files}")
-
-
-def update_muscle_chs(
-    subj: str,
-    search_dir: str,
-    task_tag: str,
-    muscle_dir: str,
-) -> list:
-    """Mark muscle channels as ``bad/muscle`` in each run's clean channels.tsv.
-
-    Reads the subject's muscle CSV from ``muscle_dir`` and, for every channel
-    listed, sets ``status=bad, status_description=muscle`` in every matching
-    clean channels.tsv under ``search_dir``.  Idempotent (re-running does not
-    compound).  Returns the list of muscle channels applied.
-    """
-    electrode_list = load_muscle_chs(subj, muscle_dir)
-    _mark_bad_channels(subj, search_dir, task_tag, electrode_list, "muscle")
-    return electrode_list
-
-
-def update_eeg_chs(
-    subj: str,
-    search_dir: str,
-    task_tag: str,
-    eeg_dir: str,
-) -> list:
-    """Mark EEG/marker channels as ``bad/eeg`` in each run's clean channels.tsv.
-
-    The companion to ``update_muscle_chs`` for the apply-muscle step: EEG
-    channels that were not caught by ``denoise`` (which drops the ones listed at
-    denoise time) but are noticed later during muscle inspection.  Reads the same
-    ``<eeg_dir>/<subject>_eeg_chans.csv`` that ``denoise`` uses and, for every
-    channel still present in a run's clean channels.tsv, sets
-    ``status=bad, status_description=eeg``.
-
-    Note the semantic difference from ``denoise``: there EEG channels are dropped
-    from the recording *before* the clean derivative is written; here the clean
-    EDF already exists, so (per the apply-muscle contract) we only annotate the
-    channels.tsv rather than regenerate the derivative.  Idempotent.  Returns the
-    list of EEG channels applied (the ``nan`` placeholder for "no EEG channels"
-    is filtered out, matching ``denoise``).
-    """
-    electrode_list = [c for c in load_eeg_chs(subj, eeg_dir) if isinstance(c, str)]
-    _mark_bad_channels(subj, search_dir, task_tag, electrode_list, "eeg")
+    print(f"Updated files for subject {subj}: {files}")
     return electrode_list
